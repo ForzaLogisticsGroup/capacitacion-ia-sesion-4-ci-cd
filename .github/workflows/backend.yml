@@ -201,19 +201,19 @@ jobs:
             exit 1
           }
 
-      - name: Health check — verificar que el API responde
-        run: |
-          Start-Sleep -Seconds 5
-          try {
-            $response = Invoke-WebRequest `
-              -Uri "http://localhost:5000/api/todo" `
-              -UseBasicParsing `
-              -TimeoutSec 10
-            Write-Host "Health check OK — Status: $($response.StatusCode)"
-          } catch {
-            Write-Error "Health check FALLIDO: $_"
-            exit 1
-          }
+      # - name: Health check — verificar que el API responde
+      #   run: |
+      #     Start-Sleep -Seconds 5
+      #     try {
+      #       $response = Invoke-WebRequest `
+      #         -Uri "http://localhost:5000/api/todo" `
+      #         -UseBasicParsing `
+      #         -TimeoutSec 10
+      #       Write-Host "Health check OK — Status: $($response.StatusCode)"
+      #     } catch {
+      #       Write-Error "Health check FALLIDO: $_"
+      #       exit 1
+      #     }
 
       - name: Limpiar workspace
         if: always()

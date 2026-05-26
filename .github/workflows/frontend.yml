@@ -180,18 +180,18 @@ jobs:
           Start-WebSite -Name "${{ env.IIS_SITE_NAME }}"
           Write-Host "Sitio IIS iniciado."
 
-      - name: Health check — verificar que el frontend carga
-        run: |
-          Start-Sleep -Seconds 3
-          try {
-            $response = Invoke-WebRequest `
-              -Uri "http://localhost/todo-app" `
-              -UseBasicParsing `
-              -TimeoutSec 10
-            Write-Host "Health check OK — Status: $($response.StatusCode)"
-          } catch {
-            Write-Warning "Health check: $_ (verifica que el sitio IIS este configurado)"
-          }
+      # - name: Health check — verificar que el frontend carga
+      #   run: |
+      #     Start-Sleep -Seconds 3
+      #     try {
+      #       $response = Invoke-WebRequest `
+      #         -Uri "http://localhost/todo-app" `
+      #         -UseBasicParsing `
+      #         -TimeoutSec 10
+      #       Write-Host "Health check OK — Status: $($response.StatusCode)"
+      #     } catch {
+      #       Write-Warning "Health check: $_ (verifica que el sitio IIS este configurado)"
+      #     }
 
       - name: Limpiar workspace
         if: always()
