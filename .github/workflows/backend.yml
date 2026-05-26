@@ -206,7 +206,7 @@ jobs:
           Start-Sleep -Seconds 5
           try {
             $response = Invoke-WebRequest `
-              -Uri "http://localhost:5000/api/todos" `
+              -Uri "http://localhost:5000/api/todo" `
               -UseBasicParsing `
               -TimeoutSec 10
             Write-Host "Health check OK — Status: $($response.StatusCode)"

@@ -174,12 +174,11 @@ jobs:
           Import-Module WebAdministration
           $site = Get-Website -Name "${{ env.IIS_SITE_NAME }}"
           if ($site.State -eq 'Started') {
-            Restart-WebSite -Name "${{ env.IIS_SITE_NAME }}"
-            Write-Host "Sitio IIS reiniciado."
-          } else {
-            Start-Website -Name "${{ env.IIS_SITE_NAME }}"
-            Write-Host "Sitio IIS iniciado."
+            Stop-WebSite -Name "${{ env.IIS_SITE_NAME }}"
+            Start-Sleep -Seconds 1
           }
+          Start-WebSite -Name "${{ env.IIS_SITE_NAME }}"
+          Write-Host "Sitio IIS iniciado."
 
       - name: Health check — verificar que el frontend carga
         run: |
