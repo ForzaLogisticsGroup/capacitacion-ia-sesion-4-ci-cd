@@ -121,7 +121,7 @@ jobs:
       url: http://localhost/todo-app
     defaults:
       run:
-        shell: pwsh   # PowerShell Core en todos los pasos de este job
+        shell: powershell   # PowerShell Core en todos los pasos de este job
 
     steps:
       - name: Download build artifact
