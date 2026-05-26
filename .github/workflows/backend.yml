@@ -1,0 +1,224 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main]
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  PROJECT_PATH: 'backend/src/TodoApi/TodoApi.csproj'
+  PUBLISH_DIR: './publish/backend'
+  DEPLOY_PATH: 'C:\inetpub\todoapi'   # Ruta de despliegue en Windows
+  SERVICE_NAME: 'todoapi'              # Nombre del Windows Service
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 1: BUILD & TEST
+  # Runner: ubuntu-latest (GitHub-hosted, gratuito)
+  # Trigger: siempre — en push, PR o tag
+  # ─────────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.PROJECT_PATH }}
+
+      - name: Build (Release)
+        run: dotnet build ${{ env.PROJECT_PATH }} --no-restore --configuration Release
+
+      - name: Run tests
+        run: |
+          TEST_PROJECTS=$(find backend -name "*.Tests.csproj" 2>/dev/null)
+          if [ -n "$TEST_PROJECTS" ]; then
+            dotnet test backend/ --no-build --configuration Release --verbosity normal
+          else
+            echo "Sin proyectos de test. Agrega uno en backend/tests/ para habilitar este paso."
+          fi
+
+      - name: Publish para Windows (win-x64, framework-dependent)
+        # Cross-compile desde Linux → binario ejecutable en Windows
+        run: |
+          dotnet publish ${{ env.PROJECT_PATH }} \
+            --configuration Release \
+            --runtime win-x64 \
+            --self-contained false \
+            --output ${{ env.PUBLISH_DIR }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-build
+          path: ${{ env.PUBLISH_DIR }}
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 2: RELEASE — Crea el GitHub Release con el .zip adjunto
+  # Runner: ubuntu-latest (GitHub-hosted)
+  # Trigger: solo al hacer push de un tag  v*.*.*
+  # ─────────────────────────────────────────────────────────────────────────────
+  release:
+    name: GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-build
+          path: ./release-files
+
+      - name: Compress artifact (.zip)
+        run: zip -r backend-${{ github.ref_name }}.zip ./release-files
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Backend ${{ github.ref_name }}"
+          body: |
+            ## Backend API — ${{ github.ref_name }}
+
+            Artefacto .NET 8 compilado para **Windows x64** (framework-dependent).
+
+            ### Requisitos del servidor
+            - Windows 10/11 o Windows Server 2019+
+            - [.NET 8 Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) instalado
+
+            ### Instalación manual
+            ```powershell
+            Expand-Archive backend-${{ github.ref_name }}.zip -DestinationPath C:\inetpub\todoapi
+            Restart-Service todoapi
+            ```
+          files: backend-${{ github.ref_name }}.zip
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 3: DEPLOY — Despliega en Windows usando el self-hosted runner local
+  # Runner: self-hosted Windows (tu PC o servidor Windows)
+  # Trigger: solo al hacer push de un tag  v*.*.*
+  # ─────────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Windows
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: [self-hosted, windows]
+    environment:
+      name: production
+      url: http://localhost:5000/swagger
+    defaults:
+      run:
+        shell: pwsh   # PowerShell Core en todos los pasos de este job
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-build
+          path: .\deploy-files
+
+      - name: Detener el servicio Windows (si existe y está corriendo)
+        run: |
+          $svc = Get-Service -Name "${{ env.SERVICE_NAME }}" -ErrorAction SilentlyContinue
+          if ($svc) {
+            if ($svc.Status -eq 'Running') {
+              Write-Host "Deteniendo servicio '${{ env.SERVICE_NAME }}'..."
+              Stop-Service -Name "${{ env.SERVICE_NAME }}" -Force
+              Start-Sleep -Seconds 2
+            } else {
+              Write-Host "Servicio '${{ env.SERVICE_NAME }}' ya estaba detenido."
+            }
+          } else {
+            Write-Host "Servicio '${{ env.SERVICE_NAME }}' no existe aun. Se creara en el siguiente paso."
+          }
+
+      - name: Crear directorio de despliegue
+        run: |
+          if (-not (Test-Path "${{ env.DEPLOY_PATH }}")) {
+            New-Item -ItemType Directory -Path "${{ env.DEPLOY_PATH }}" -Force | Out-Null
+            Write-Host "Directorio creado: ${{ env.DEPLOY_PATH }}"
+          }
+
+      - name: Copiar archivos al servidor
+        run: |
+          Copy-Item -Path ".\deploy-files\*" `
+                    -Destination "${{ env.DEPLOY_PATH }}" `
+                    -Recurse -Force
+          Write-Host "Archivos desplegados en: ${{ env.DEPLOY_PATH }}"
+          Get-ChildItem "${{ env.DEPLOY_PATH }}" | Select-Object Name, Length
+
+      - name: Registrar el Windows Service (solo la primera vez)
+        run: |
+          $exePath = "${{ env.DEPLOY_PATH }}\TodoApi.exe"
+          $svc = Get-Service -Name "${{ env.SERVICE_NAME }}" -ErrorAction SilentlyContinue
+          if (-not $svc) {
+            Write-Host "Registrando '${{ env.SERVICE_NAME }}' como Windows Service..."
+            New-Service -Name "${{ env.SERVICE_NAME }}" `
+                        -BinaryPathName $exePath `
+                        -DisplayName "Todo API - .NET 8" `
+                        -Description "ASP.NET Core 8 REST API para la Todo App" `
+                        -StartupType Automatic
+            Write-Host "Servicio registrado exitosamente."
+          } else {
+            Write-Host "Servicio ya existe. Actualizando ruta del binario..."
+            sc.exe config "${{ env.SERVICE_NAME }}" binPath= $exePath
+          }
+
+      - name: Configurar variables de entorno del servicio
+        run: |
+          [System.Environment]::SetEnvironmentVariable(
+            "ASPNETCORE_URLS", "http://localhost:5000", "Machine")
+          [System.Environment]::SetEnvironmentVariable(
+            "ASPNETCORE_ENVIRONMENT", "Production", "Machine")
+          Write-Host "Variables de entorno configuradas."
+
+      - name: Iniciar el servicio
+        run: |
+          Start-Service -Name "${{ env.SERVICE_NAME }}"
+          Start-Sleep -Seconds 3
+          $svc = Get-Service -Name "${{ env.SERVICE_NAME }}"
+          Write-Host "Estado del servicio: $($svc.Status)"
+          if ($svc.Status -ne 'Running') {
+            Write-Error "El servicio no arranco correctamente."
+            exit 1
+          }
+
+      - name: Health check — verificar que el API responde
+        run: |
+          Start-Sleep -Seconds 5
+          try {
+            $response = Invoke-WebRequest `
+              -Uri "http://localhost:5000/api/todos" `
+              -UseBasicParsing `
+              -TimeoutSec 10
+            Write-Host "Health check OK — Status: $($response.StatusCode)"
+          } catch {
+            Write-Error "Health check FALLIDO: $_"
+            exit 1
+          }
+
+      - name: Limpiar workspace
+        if: always()
+        run: |
+          if (Test-Path ".\deploy-files") {
+            Remove-Item -Recurse -Force ".\deploy-files"
+            Write-Host "Workspace limpiado."
+          }

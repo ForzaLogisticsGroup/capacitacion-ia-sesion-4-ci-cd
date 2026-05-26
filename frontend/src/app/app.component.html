@@ -1,0 +1,44 @@
+<div class="container">
+  <header>
+    <h1>Todo App</h1>
+    <p class="subtitle">CI/CD con GitHub Actions</p>
+  </header>
+
+  @if (error()) {
+    <div class="error-banner">
+      <span>{{ error() }}</span>
+      <button class="btn-close" (click)="clearError()">&#10005;</button>
+    </div>
+  }
+
+  <div class="add-todo">
+    <input
+      type="text"
+      class="input"
+      [(ngModel)]="newTodoTitle"
+      placeholder="Nueva tarea..."
+      (keyup.enter)="addTodo()"
+    />
+    <button class="btn btn-primary" (click)="addTodo()">Agregar</button>
+  </div>
+
+  @if (loading()) {
+    <div class="loading">Cargando tareas...</div>
+  } @else {
+    <ul class="todo-list">
+      @for (todo of todos(); track todo.id) {
+        <li class="todo-item" [class.completed]="todo.isCompleted">
+          <input
+            type="checkbox"
+            [checked]="todo.isCompleted"
+            (change)="toggleTodo(todo)"
+          />
+          <span class="todo-title">{{ todo.title }}</span>
+          <button class="btn btn-danger btn-sm" (click)="deleteTodo(todo.id)">Eliminar</button>
+        </li>
+      } @empty {
+        <li class="empty-state">No hay tareas. Agrega una arriba.</li>
+      }
+    </ul>
+  }
+</div>
