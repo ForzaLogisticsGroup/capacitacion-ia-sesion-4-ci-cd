@@ -115,7 +115,7 @@ jobs:
     name: Deploy to Windows IIS
     needs: release
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: [self-hosted, windows, x64, edmundo]
+    runs-on: [self-hosted, Windows, X64, edmundo]
     environment:
       name: production
       url: http://localhost/todo-app
