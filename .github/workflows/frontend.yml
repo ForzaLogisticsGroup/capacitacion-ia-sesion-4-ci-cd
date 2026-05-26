@@ -154,19 +154,35 @@ jobs:
           Write-Host "Archivos desplegados:"
           Get-ChildItem "${{ env.DEPLOY_PATH }}" | Select-Object Name
 
-      - name: Crear sitio IIS (solo la primera vez)
+      - name: Configurar App Pool y sitio IIS
         run: |
-          Import-Module WebAdministration -ErrorAction SilentlyContinue
+          Import-Module WebAdministration
+
+          # App Pool sin .NET CLR — Angular son archivos estáticos, no ASP.NET
+          $poolName = "${{ env.IIS_SITE_NAME }}-pool"
+          if (-not (Test-Path "IIS:\AppPools\$poolName")) {
+            Write-Host "Creando App Pool '$poolName'..."
+            New-WebAppPool -Name $poolName
+          }
+          # "No Managed Code" evita que IIS intente compilar la app como ASP.NET
+          Set-ItemProperty "IIS:\AppPools\$poolName" -Name managedRuntimeVersion -Value ""
+          Write-Host "App Pool configurado: No Managed Code"
+
+          # Crear el sitio si no existe
           $site = Get-Website -Name "${{ env.IIS_SITE_NAME }}" -ErrorAction SilentlyContinue
           if (-not $site) {
             Write-Host "Creando sitio IIS '${{ env.IIS_SITE_NAME }}'..."
             New-Website -Name "${{ env.IIS_SITE_NAME }}" `
                         -Port 80 `
                         -PhysicalPath "${{ env.DEPLOY_PATH }}" `
+                        -ApplicationPool $poolName `
                         -Force
             Write-Host "Sitio IIS creado."
           } else {
-            Write-Host "Sitio IIS '${{ env.IIS_SITE_NAME }}' ya existe."
+            # Asegurar que el App Pool correcto esté asignado en deploys posteriores
+            Set-ItemProperty "IIS:\Sites\${{ env.IIS_SITE_NAME }}" `
+              -Name applicationPool -Value $poolName
+            Write-Host "App Pool actualizado en sitio existente."
           }
 
       - name: Reiniciar/iniciar el sitio IIS
